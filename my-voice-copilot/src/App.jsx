@@ -236,19 +236,20 @@ export default function App() {
             placeholder="Type or press mic and speak..."
           />
           <button
+            type="button"
+            onClick={toggleListening}
+            className={`mic-red px-3 py-2 rounded-full text-white transition transform active:scale-95
+              ${listening ? "bg-red-600 hover:bg-red-700" : "mic-red bg-blue-600 hover:bg-blue-700"}`}
+          >
+            {listening ? "Stop" : "🎤"}
+          </button>
+          <button
             type="submit"
             className="snd-green px-4 py-2 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 transition transform active:scale-95"
           >
             Send
           </button>
-          <button
-            type="button"
-            onClick={toggleListening}
-            className={`mic-red px-3 py-2 rounded-full text-white transition transform active:scale-95
-              ${listening ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}
-          >
-            {listening ? "Stop" : "🎤"}
-          </button>
+          
         </div>
       </form>
     </div>
