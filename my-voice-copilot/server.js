@@ -9,12 +9,8 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Copilot Studio Direct Line Token URL (must be in .env)
+// Copilot Studio Direct Line Token URL (from .env in Render dashboard)
 const COPILOT_TOKEN_URL = process.env.COPILOT_TOKEN_URL;
-if (!COPILOT_TOKEN_URL) {
-  console.error("❌ Missing COPILOT_TOKEN_URL in .env");
-  process.exit(1);
-}
 
 // Helper for resolving __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -30,7 +26,7 @@ app.get("/api/directline/token", async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (err) {
-    console.error("❌ Token proxy error:", err.message);
+    console.error("Token proxy error:", err);
     res.status(500).json({ error: "Failed to fetch token" });
   }
 });
@@ -39,8 +35,8 @@ app.get("/api/directline/token", async (req, res) => {
 const distPath = path.join(__dirname, "dist");
 app.use(express.static(distPath));
 
-// Fallback: let React handle client-side routes
-app.get("*", (req, res) => {
+// Fallback: let React handle client-side routes (works in Express 5)
+app.get(/.*/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
