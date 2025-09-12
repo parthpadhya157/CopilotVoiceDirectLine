@@ -1,194 +1,150 @@
-// App.jsx — Ready-to-run single-file React voice assistant for Copilot Studio
-// Instructions: paste this file into a Vite React app (src/App.jsx) and follow the run steps I give in chat.
+// src/App.jsx
+import React, { useEffect, useRef, useState } from "react";
+import { DirectLine } from "botframework-directlinejs";
+import logo from './assets/logo.jpg'; 
+import "./custom.css"
 
-import React, { useEffect, useRef, useState } from 'react';
-import { DirectLine } from 'botframework-directlinejs';
-
-// ======= CONFIG =======
-// Replace this with the Copilot Studio 'Direct Line' token URL you have.
-// Example: const COPILOT_TOKEN_URL = 'https://copilot-something.mscrm.../token'
-const COPILOT_TOKEN_URL = 'https://7f700e69bd00e2339f9c628d67c458.04.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr016_childAgent1/directline/token?api-version=2022-03-01-preview';
-
-// Optional: language for speech recognition and synthesis
-const LOCALE = 'en-US';
-
-// =======================
+const COPILOT_TOKEN_URL = "/api/directline/token";
+const LOCALE = "en-US";
 
 export default function App() {
-  const [messages, setMessages] = useState([]); // {id, from, text}
+  const [messages, setMessages] = useState([]);
   const [listening, setListening] = useState(false);
-  const [status, setStatus] = useState('idle');
+  const [status, setStatus] = useState("idle");
+  const [theme, setTheme] = useState("light");
+  const [botTyping, setBotTyping] = useState(false);
+
   const directLineRef = useRef(null);
   const userIdRef = useRef(`user_${Math.floor(Math.random() * 1000000)}`);
   const recognitionRef = useRef(null);
-  const lastUserMessageRef = useRef(''); // To store the last user query to prevent echo.
+  const lastUserMessageRef = useRef("");
+  const messagesEndRef = useRef(null);
 
+  // Scroll to bottom when messages change
   useEffect(() => {
-    // Initialize speech recognition if available
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const r = new SpeechRecognition();
-      r.lang = LOCALE;
-      r.interimResults = false;
-      r.maxAlternatives = 1;
-      r.onresult = (ev) => {
-        const transcript = ev.results[0][0].transcript;
-        pushMessage({ from: 'user', text: transcript });
-        lastUserMessageRef.current = transcript;
-        sendToBot(transcript);
-      };
-      r.onerror = (e) => {
-        console.error('Speech recognition error', e);
-        setStatus('recognition-error');
-        setListening(false);
-      };
-      r.onend = () => {
-        setListening(false);
-        setStatus('idle');
-      };
-      recognitionRef.current = r;
-    } else {
-      console.warn('SpeechRecognition API not available');
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-    // Clean up on unmount
+  // Speech recognition
+  useEffect(() => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const r = new SpeechRecognition();
+    r.lang = LOCALE;
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+
+    r.onresult = (ev) => {
+      const transcript = ev.results[0][0].transcript;
+      pushMessage({ from: "user", text: transcript });
+      lastUserMessageRef.current = transcript;
+      sendToBot(transcript);
+    };
+    r.onerror = () => {
+      setStatus("recognition-error");
+      setListening(false);
+    };
+    r.onend = () => {
+      setListening(false);
+      setStatus("idle");
+    };
+
+    recognitionRef.current = r;
     return () => {
       if (recognitionRef.current) {
-        try { recognitionRef.current.onresult = null; recognitionRef.current.onend = null; } catch(e){}
-      }
-      if (directLineRef.current) {
-        try { directLineRef.current.end(); } catch(e){}
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
       }
     };
   }, []);
 
+  // DirectLine init
   useEffect(() => {
-    // initialize DirectLine when component mounts
     initDirectLine();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      try {
+        if (directLineRef.current?.end) directLineRef.current.end();
+      } catch {}
+    };
   }, []);
 
   function pushMessage(msg) {
-    setMessages(m => [...m, { id: Date.now() + Math.random(), ...msg }]);
+    setMessages((prev) => [...prev, { id: Date.now() + Math.random(), ...msg }]);
   }
 
   async function initDirectLine() {
-    setStatus('fetching-token');
+    setStatus("fetching-token");
     try {
-      if (!COPILOT_TOKEN_URL || COPILOT_TOKEN_URL.includes('PASTE_YOUR')) {
-        setStatus('need-token-url');
-        console.error('Please set COPILOT_TOKEN_URL at top of file.');
-        return;
-      }
-
-      // The Copilot "Direct Line token URL" (from Copilot Studio) usually returns JSON like { token, conversationId }
-      const tokenResp = await fetch("/api/directline/token");
-      if (!tokenResp.ok) throw new Error(`token fetch failed: ${tokenResp.status}`);
-      //p-const tokJson = await tokenResp.json();
-      //p-const token = tokJson.token || tokJson.accessToken || tokJson.value || tokJson.directLineToken;
-      //p-if (!token) throw new Error('Token not found in token endpoint response');
-      const tokJson = await tokenResp.json();
-      console.log("Token response from backend:", tokJson);   // Debug log
-
-      // Force token extraction
-      const token = tokJson.token;
-      if (!token) {
-      throw new Error('Token not found in token endpoint response: ' + JSON.stringify(tokJson));
-      }
-
-
-      setStatus('connecting-directline');
-      const dl = new DirectLine({ token });
+      const resp = await fetch(COPILOT_TOKEN_URL);
+      const data = await resp.json();
+      const dl = new DirectLine({ token: data.token });
       directLineRef.current = dl;
 
-      // Subscribe to activities
-      dl.activity$.subscribe(activity => {
-        // filter out messages not from bot
-        try {
-          if (!activity || !activity.type) return;
-          if (activity.type === 'message' && activity.from && activity.from.id !== userIdRef.current) {
-            let text = activity.text || (activity.channelData && activity.channelData.text);
-            if (text) {
-              // Check if the bot's message is an echo of the last user message.
-              if (text.trim() === lastUserMessageRef.current.trim()) {
-                return; // Ignore the message if it's an echo.
-              }
+      dl.activity$.subscribe((activity) => {
+        if (!activity || activity.type !== "message") return;
+        if (activity.from?.id === userIdRef.current) return;
 
-              // The fix to remove citations and trailing text.
-              const citationIndex = text.indexOf('[');
-              if (citationIndex !== -1) {
-                text = text.substring(0, citationIndex).trim();
-              }
+        setBotTyping(true);
+        let text = activity.text || activity.channelData?.text || "";
+        if (text.trim() === lastUserMessageRef.current?.trim()) return;
 
-              pushMessage({ from: 'bot', text });
-              speakText(text);
-            }
-          }
-        } catch (e) {
-          console.error('activity handling error', e);
-        }
-      }, err => console.error(err));
+        const citationIndex = text.indexOf("[");
+        if (citationIndex !== -1) text = text.substring(0, citationIndex).trim();
 
-      setStatus('ready');
-    } catch (e) {
-      console.error('initDirectLine error', e);
-      setStatus('dl-error');
+        setTimeout(() => {
+          pushMessage({ from: "bot", text });
+          speakText(text);
+          setBotTyping(false);
+        }, 500); // small delay for realism
+      });
+
+      setStatus("ready");
+    } catch (err) {
+      console.error(err);
+      setStatus("dl-error");
     }
   }
 
   function sendToBot(text) {
     if (!directLineRef.current) {
-      console.warn('DirectLine not initialized');
-      pushMessage({ from: 'bot', text: "Sorry — bot not connected." });
+      pushMessage({ from: "bot", text: "Sorry — bot not connected." });
       return;
     }
-
-    // Post activity to bot
-    directLineRef.current.postActivity({
-      from: { id: userIdRef.current, name: 'WebUser' },
-      type: 'message',
-      text
-    }).subscribe(id => {
-      // optional: you get back the activity id
-    }, err => console.error(err));
+    directLineRef.current
+      .postActivity({
+        from: { id: userIdRef.current, name: "WebUser" },
+        type: "message",
+        text,
+      })
+      .subscribe(
+        () => {},
+        (err) => console.error(err)
+      );
   }
 
   function speakText(text) {
-    if (!('speechSynthesis' in window)) {
-      console.warn('SpeechSynthesis not available');
-      return;
-    }
-    try {
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = LOCALE;
-      u.onstart = () => setStatus('speaking');
-      u.onend = () => setStatus('idle');
-      speechSynthesis.cancel(); // stop any existing speech to avoid overlapping
-      speechSynthesis.speak(u);
-    } catch (e) {
-      console.error('TTS error', e);
-    }
+    if (!("speechSynthesis" in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = LOCALE;
+    u.onstart = () => setStatus("speaking");
+    u.onend = () => setStatus("idle");
+    try { speechSynthesis.cancel(); } catch {}
+    speechSynthesis.speak(u);
   }
 
   function toggleListening() {
-    if (!recognitionRef.current) {
-      alert('SpeechRecognition API not supported in this browser. Use Chrome/Edge on desktop or a compatible browser.');
-      return;
-    }
+    if (!recognitionRef.current) return;
     if (listening) {
-      try { recognitionRef.current.stop(); } catch(e){}
+      recognitionRef.current.stop();
       setListening(false);
-      setStatus('idle');
-      return;
-    }
-    try {
+      setStatus("idle");
+    } else {
       recognitionRef.current.start();
       setListening(true);
-      setStatus('listening');
-    } catch (e) {
-      console.error('start listening failed', e);
-      setListening(false);
-      setStatus('idle');
+      setStatus("listening");
     }
   }
 
@@ -196,54 +152,105 @@ export default function App() {
     e.preventDefault();
     const text = e.target.elements.message.value.trim();
     if (!text) return;
-    pushMessage({ from: 'user', text });
+    pushMessage({ from: "user", text });
     lastUserMessageRef.current = text;
     sendToBot(text);
     e.target.reset();
   }
 
   return (
-    <div style={styles.app}>
-      <header style={styles.header}>
-        <h2>Copilot Voice Assistant</h2>
-        <div style={styles.status}>Status: <strong>{status}</strong></div>
+    <div className={`min-h-screen flex flex-col
+      ${theme === "light" ? "bg-gradient-to-b from-gray-50 to-gray-100" : "bg-gradient-to-b from-gray-900 to-black"}
+    `}>
+      {/* Header */}
+      <header className={`bottom-frm-bg sticky top-0 z-20 flex items-center justify-between px-4 py-3
+        ${theme === "light" ? "bg-white/80" : "bg-gray-900/80"} backdrop-blur-md border-b
+      `}>
+        <div className="flex items-center gap-3">
+          <img src={logo} alt="logo" className="w-8 h-8 rounded-md shadow-sm" />
+          <div className="flex flex-col">
+            <span className={`ttl-head text-sm font-semibold ${theme === "light" ? "text-gray-800" : "text-gray-100"}`}>
+              Copilot Voice Assistant
+            </span>
+            <span className="text-xs text-gray-400">{status === "ready" ? "Ready" : status}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            className="dark-btn px-3 py-1 rounded-md border text-sm bg-transparent hover:bg-gray-200/30 transition"
+            aria-label="Toggle theme"
+          >
+            {theme === "light" ? "🌙 Dark" : "☀️ Light"}
+          </button>
+        </div>
       </header>
 
-      <main style={styles.chatWrap}>
-        <div style={styles.messages}>
-          {messages.map(m => (
-            <div key={m.id} style={m.from === 'user' ? styles.userMsg : styles.botMsg}>
-              <div style={styles.bubble}>{m.text}</div>
+      {/* Messages area */}
+      <main className="main-gradient-bg flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        {messages.map((m) => (
+          <div key={m.id} className={`flex ${m.from === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={` rounded-2xl px-4 py-2 max-w-[80%] text-sm shadow transform transition-all
+              ${m.from === "user"
+                ? "user-msg-dsn bg-emerald-600 text-white rounded-br-none hover:scale-105"
+                : theme === "light"
+                  ? "bg-white text-gray-900 border rounded-bl-none hover:scale-105"
+                  : "bg-gray-800 text-gray-100 rounded-bl-none hover:scale-105"
+              }`}
+            >
+              {m.text}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
 
-        <form onSubmit={handleManualSend} style={styles.form}>
-          <input name="message" placeholder="Type or press mic and speak..." style={styles.input} />
-          <button type="submit" style={styles.send}>Send</button>
-          <button type="button" onClick={toggleListening} style={{...styles.mic, background: listening ? '#b71c1c' : '#1976d2'}}>
-            {listening ? 'Stop' : '🎤'}
-          </button>
-        </form>
+        {/* Typing indicator */}
+        {botTyping && (
+          <div className="flex justify-start">
+            <div className={`rounded-2xl px-4 py-2 max-w-[40%] text-sm shadow
+              ${theme === "light" ? "bg-white" : "bg-gray-800"}`}
+            >
+              <div className="flex gap-1">
+                <span className="animate-bounce">•</span>
+                <span className="animate-bounce delay-150">•</span>
+                <span className="animate-bounce delay-300">•</span>
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/*<div style={styles.hint}>Tip: your Copilot token URL must allow CORS for this to work from the browser. If token fetch fails, you'll need a small server proxy to request token server-side.</div>*/}
+        <div ref={messagesEndRef} />
       </main>
+
+      {/* Input area */}
+      <form
+        onSubmit={handleManualSend}
+        className={`bottom-frm-bg sticky bottom-0 z-20 px-4 py-3
+          ${theme === "light" ? "bg-white/90" : "bg-gray-900/90"} border-t backdrop-blur-md
+        `}
+      >
+        <div className="max-w-4xl mx-auto flex items-center gap-2">
+          <input
+            name="message"
+            className={`flex-1 rounded-full px-4 py-2 text-sm focus:outline-none
+              ${theme === "light" ? "bg-gray-100 text-gray-900" : "bg-gray-800 text-gray-100"}`}
+            placeholder="Type or press mic and speak..."
+          />
+          <button
+            type="submit"
+            className="snd-green px-4 py-2 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 transition transform active:scale-95"
+          >
+            Send
+          </button>
+          <button
+            type="button"
+            onClick={toggleListening}
+            className={`mic-red px-3 py-2 rounded-full text-white transition transform active:scale-95
+              ${listening ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}
+          >
+            {listening ? "Stop" : "🎤"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
-
-const styles = {
-  app: { fontFamily: 'Inter, Roboto, sans-serif', display: 'flex', flexDirection: 'column', height: '100vh', background: '#f5f7fb' },
-  header: { padding: '12px 20px', borderBottom: '1px solid #e0e6ef', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  status: { fontSize: 14, color: '#333' },
-  chatWrap: { padding: 20, flex: 1, display: 'flex', flexDirection: 'column' },
-  messages: { flex: 1, overflowY: 'auto', paddingBottom: 10 },
-  userMsg: { display: 'flex', justifyContent: 'flex-end', margin: '8px 0' },
-  botMsg: { display: 'flex', justifyContent: 'flex-start', margin: '8px 0' },
-  bubble: { maxWidth: '70%', padding: '10px 14px', borderRadius: 14, background: '#fff', boxShadow: '0 1px 3px rgba(12,20,40,0.06)' },
-  form: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 },
-  input: { flex: 1, padding: '10px 12px', borderRadius: 8, border: '1px solid #dfe6f0' },
-  send: { padding: '10px 14px', borderRadius: 8, border: 'none', background: '#2e7d32', color: '#fff' },
-  mic: { padding: '10px 12px', borderRadius: 8, border: 'none', color: '#fff' },
-  hint: { marginTop: 12, fontSize: 13, color: '#666' }
-};
