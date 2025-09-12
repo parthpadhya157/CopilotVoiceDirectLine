@@ -21,6 +21,7 @@ export default function App() {
   const directLineRef = useRef(null);
   const userIdRef = useRef(`user_${Math.floor(Math.random() * 1000000)}`);
   const recognitionRef = useRef(null);
+  const lastUserMessageRef = useRef(''); // To store the last user query to prevent echo.
 
   useEffect(() => {
     // Initialize speech recognition if available
@@ -33,6 +34,7 @@ export default function App() {
       r.onresult = (ev) => {
         const transcript = ev.results[0][0].transcript;
         pushMessage({ from: 'user', text: transcript });
+        lastUserMessageRef.current = transcript;
         sendToBot(transcript);
       };
       r.onerror = (e) => {
@@ -89,12 +91,12 @@ export default function App() {
       console.log("Token response from backend:", tokJson);   // Debug log
 
       // Force token extraction
-      const token = tokJson.token;  
+      const token = tokJson.token;
       if (!token) {
       throw new Error('Token not found in token endpoint response: ' + JSON.stringify(tokJson));
       }
 
-      
+
       setStatus('connecting-directline');
       const dl = new DirectLine({ token });
       directLineRef.current = dl;
@@ -105,8 +107,19 @@ export default function App() {
         try {
           if (!activity || !activity.type) return;
           if (activity.type === 'message' && activity.from && activity.from.id !== userIdRef.current) {
-            const text = activity.text || (activity.channelData && activity.channelData.text);
+            let text = activity.text || (activity.channelData && activity.channelData.text);
             if (text) {
+              // Check if the bot's message is an echo of the last user message.
+              if (text.trim() === lastUserMessageRef.current.trim()) {
+                return; // Ignore the message if it's an echo.
+              }
+
+              // The fix to remove citations and trailing text.
+              const citationIndex = text.indexOf('[');
+              if (citationIndex !== -1) {
+                text = text.substring(0, citationIndex).trim();
+              }
+
               pushMessage({ from: 'bot', text });
               speakText(text);
             }
@@ -184,6 +197,7 @@ export default function App() {
     const text = e.target.elements.message.value.trim();
     if (!text) return;
     pushMessage({ from: 'user', text });
+    lastUserMessageRef.current = text;
     sendToBot(text);
     e.target.reset();
   }
@@ -191,7 +205,7 @@ export default function App() {
   return (
     <div style={styles.app}>
       <header style={styles.header}>
-        <h2>Copilot Voice Assistant (Browser)</h2>
+        <h2>Copilot Voice Assistant</h2>
         <div style={styles.status}>Status: <strong>{status}</strong></div>
       </header>
 
@@ -212,7 +226,7 @@ export default function App() {
           </button>
         </form>
 
-        <div style={styles.hint}>Tip: your Copilot token URL must allow CORS for this to work from the browser. If token fetch fails, you'll need a small server proxy to request token server-side.</div>
+        {/*<div style={styles.hint}>Tip: your Copilot token URL must allow CORS for this to work from the browser. If token fetch fails, you'll need a small server proxy to request token server-side.</div>*/}
       </main>
     </div>
   );
