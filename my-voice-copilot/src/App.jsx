@@ -1,7 +1,8 @@
 // src/App.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { DirectLine } from "botframework-directlinejs";
-import logo from './assets/logo.jpg'; 
+//import logo from './assets/logo.jpg'; 
+import logo from './assets/logo.png'; 
 import "./custom.css"
 
 const COPILOT_TOKEN_URL = "/api/directline/token";
