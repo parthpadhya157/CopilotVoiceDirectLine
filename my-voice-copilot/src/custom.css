@@ -1,10 +1,8 @@
-.user-msg-dsn{
-  /* background: darkcyan */
-  background: orangered
+/* .user-msg-dsn{
+   background: orangered 
 }
 
 .bottom-frm-bg {
-    /* background: steelblue; */
     background: coral;
 }
 
@@ -22,11 +20,41 @@
 }
 
 .dark-btn{
-    /* background: lightskyblue; */
     background: orangered;
 }
 
 .main-gradient-bg {
-    /* background: linear-gradient(45deg, lightskyblue, transparent); */
     background: linear-gradient(45deg, coral, transparent);
+} 
+
+/*--------------------------*/
+
+.user-msg-dsn{
+  background: darkcyan  
+}
+
+.bottom-frm-bg {
+     background: steelblue; 
+}
+
+.snd-green {
+    background: green;
+}
+
+.mic-red {
+    background: crimson;
+}
+
+.ttl-head {
+    color: white;
+    font-size: 18px;
+}
+
+.dark-btn{
+     background: lightskyblue; 
+}
+
+.main-gradient-bg {
+     background: linear-gradient(45deg, lightskyblue, transparent); 
+
 }
